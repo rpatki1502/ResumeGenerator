@@ -11,7 +11,7 @@ const PARSE_SYSTEM = `You are a resume data extractor. The user will send you th
 RULES:
 - Your ENTIRE response must be one valid JSON object. Start with { and end with }. No markdown, no backticks, no explanation, no preamble, nothing after the closing brace.
 - Fill every field with ACTUAL content from the resume for identity and employment/education facts. Do NOT return placeholder text if the data is present in the resume.
-- For roles[].bullets: do NOT paste full resume marketing bullets. Instead provide 3-8 short factual anchor phrases per role (each under ~120 characters): domains, systems, tech names as they literally appear so later steps know where the candidate worked — not resume-ready bullet copy.
+- For roles[].bullets: do NOT paste full resume marketing bullets. Instead provide 3-8 short factual anchor phrases per role (each under ~120 characters): domains, systems, tech names as they literally appear so later steps know where the candidate worked (not resume-ready bullet copy).
 - The skills field should be a brief comma-separated factual list of technologies named on the resume (for reference only downstream; generators will rebuild skills from job descriptions).
 
 Return this exact structure, populated with real data from the resume:
@@ -37,14 +37,37 @@ Return this exact structure, populated with real data from the resume:
   ]
 }`;
 
+function inferArchetype(jdText) {
+  const s = (jdText || "").toLowerCase();
+  const engineeringHits = [
+    "java", "spring", "react", "angular", "node", "python", "microservices", "api", "rest", "kafka", "kubernetes", "docker", "aws", "azure", "gcp", "devops", "ci/cd", "oracle", "sql"
+  ].filter(k => s.includes(k)).length;
+  const marketingHits = [
+    "marketing", "campaign", "seo", "sem", "ppc", "google ads", "meta ads", "facebook ads", "content", "copy", "brand", "email", "lifecycle", "crm", "hubspot", "marketo", "salesforce", "ga4", "google analytics", "attribution", "mql", "sql lead", "conversion", "funnel"
+  ].filter(k => s.includes(k)).length;
+
+  if (marketingHits > engineeringHits) return "marketing";
+  return "engineering";
+}
+
 const CONTRACT_RESUME_SYSTEM = `You are a senior technical recruiter and resume writer specialising in contract placements. You write resumes that sound exactly like a human wrote them -- direct, confident, specific, and varied in sentence structure. Never templated, never formulaic, never AI-sounding.
 
-Primary rule: This resume is written FOR the job description. The skills section, contract profile bullets, and all professional-experience bullets are composed fresh to match the JD — not copied from the uploaded resume wording. Assume hands-on familiarity with everything the JD lists as required or strongly preferred for this application. Use uploaded data ONLY as factual anchors: name, contact, employer names, dates, education, certifications, and high-level domain/project names; keep timelines and employers truthful.
+Primary rule: This resume is written FOR the job description. The skills section, professional summary bullets, and all professional-experience bullets are composed fresh to match the JD — not copied from the uploaded resume wording. Assume hands-on familiarity with everything the JD lists as required or strongly preferred for this application. Use uploaded data ONLY as factual anchors: name, contact, employer names, dates, education, certifications, and high-level domain/project names; keep timelines and employers truthful.
 
 BOLDING RULE (CRITICAL):
 - Whenever you mention a technology/tool/framework/platform that comes from the JD requirement extraction (or the inferred cloud provider ecosystem), wrap the term in markdown bold like **Java 8**, **Spring Boot**, **Oracle**, **Angular 8**, **Kafka**.
-- Apply this in CONTRACT PROFILE bullets and all PROFESSIONAL EXPERIENCE bullets.
+- Apply this in PROFESSIONAL SUMMARY bullets and all PROFESSIONAL EXPERIENCE bullets.
 - Do not bold generic words (team, system, service). Only bold concrete technical terms.
+
+PUNCTUATION + MARKDOWN HYGIENE (CRITICAL):
+- Do not use em dashes (—) or double-hyphen em dashes (--). Use commas or periods instead.
+- Do not use italic markdown (single-asterisk *...*). Only use markdown headings (#, ##), bullets (-), and bold (**...**).
+
+TIMELINE + STACK COHERENCE (CRITICAL):
+- Keep each role internally consistent with its date range and environment implied by the anchors/JD (e.g., do not mix modern cloud-native tooling into a role described as legacy/on-prem unless the JD explicitly implies it).
+- Do not imply every technology was used in every role. Distribute skills realistically across roles.
+- If you are unsure about a version number for a tool in a given time period, omit the version and keep it generic (e.g., write **Java** instead of **Java 21**).
+- Avoid “impossible combos” in one bullet (e.g., too many unrelated platforms). Keep stacks plausible and interoperable.
 
 ===========================================
 OUTPUT FORMAT -- FOLLOW EXACTLY
@@ -54,7 +77,7 @@ OUTPUT FORMAT -- FOLLOW EXACTLY
 [Job Title from their resume] | Contract & Consulting
 [Location] - [Phone] - [Email] - [LinkedIn URL]
 
-## CONTRACT PROFILE
+## PROFESSIONAL SUMMARY
 - [14 bullet points -- see PROFILE RULES below]
 
 ## TECHNICAL SKILLS
@@ -75,7 +98,7 @@ OUTPUT FORMAT -- FOLLOW EXACTLY
 ## PROFESSIONAL EXPERIENCE
 
 **[Job Title]** | **[Company]** | [Dates]
-*Project: [Project Name -- Platform Description]*
+Project: [Project Name -- Platform Description]
 [One sentence plain text describing the system/platform at a high level.]
 - [bullet 1]
 - [bullet 2]
@@ -87,9 +110,9 @@ OUTPUT FORMAT -- FOLLOW EXACTLY
 [Certifications]
 
 ===========================================
-CONTRACT PROFILE RULES -- EXACTLY 14 BULLETS
+PROFESSIONAL SUMMARY RULES -- EXACTLY 14 BULLETS
 ===========================================
-Topic order adapts to the JD: start with experience breadth + years, then front-load bullets that mirror must-have JD themes (stack, integrations, practices). Include cloud, delivery pipeline, or platform-reliability themes when the role is production software, even if the JD only names a few tools. Remaining bullets cover leadership, delivery quality, agile/reviews/mentoring, and location/engagement if the JD mentions them. If the JD is very short, still dedicate 2-3 profile bullets to related production skills (cloud, deployment, monitoring) per SPARSE JD rules.
+Topic order adapts to the JD: start with experience breadth + years, then front-load bullets that mirror must-have JD themes (stack, integrations, practices). Include cloud, delivery pipeline, or platform-reliability themes when the role is production software, even if the JD only names a few tools. Remaining bullets cover leadership, delivery quality, agile/reviews/mentoring, and location/engagement if the JD mentions them. If the JD is very short, still dedicate 2-3 summary bullets to related production skills (cloud, deployment, monitoring) per SPARSE JD rules.
 
 ===========================================
 SKILLS SECTION RULES
@@ -110,6 +133,9 @@ If the job description lists few concrete technologies, or omits whole areas (e.
 - Add related skills and matching experience bullets for: major cloud provider services (managed compute, storage, networking, identity/IAM, managed databases, monitoring/alerting), containerization and orchestration where production systems are implied, CI/CD and environment promotion, logging/metrics/tracing at a high level, security patterns for APIs and data.
 - Do not leave cloud/containers/observability entirely absent for senior production-software roles unless the JD is clearly non-cloud (e.g. purely embedded, on-prem legacy with no cloud context).
 - Prefer phrasing that stays consistent with the JD stack (e.g. Java/Spring roles get cloud services commonly paired with that stack).
+SHORTLIST RULE (CLOUD VISIBILITY):
+- For modern software roles, ensure Cloud appears in 3 places: (1) the Cloud skills row, (2) at least one PROFESSIONAL SUMMARY bullet, and (3) at least one bullet in the most recent role.
+- If the JD does not name AWS/Azure/GCP and no Cloud provider override is set, keep Cloud provider-neutral (managed compute/storage/IAM/monitoring).
 
 ===========================================
 EXPERIENCE RULES -- 12-14 BULLETS PER ROLE
@@ -133,7 +159,60 @@ JD-FIRST RULES
 - Retitle roles to JD language while matching seniority implied by anchors.
 - Mirror JD terminology for ATS and recruiter skim.
 - When the JD is thin on skills, apply SPARSE JD / RELATED SKILLS rules above so Cloud, Containers, and Observability rows and bullets are still present where the role implies production software delivery.
- - If a cloud provider is inferred as AWS/Azure/GCP, use that provider's terminology in the Cloud row and bullets. If Unspecified, stay provider-neutral (managed compute/storage/networking/IAM/monitoring) without naming AWS/Azure/GCP.
+- If a cloud provider is inferred as AWS/Azure/GCP (or selected via Cloud provider override), use that provider's terminology and include 3-6 concrete service names in the Cloud row and one bullet. If Unspecified and no override is set, stay provider-neutral.
+
+Output clean markdown only -- no commentary, no preamble, no trailing notes.`;
+
+const CONTRACT_MARKETING_SYSTEM = `You are a senior recruiter and resume writer specialising in marketing contract placements. Write like a real human: direct, specific, varied sentence structure. No templated tone.
+
+Primary rule: This resume is written FOR the job description. Skills and bullets are composed fresh to match the JD — not copied from the uploaded resume wording. Assume hands-on familiarity with what the JD lists as required or strongly preferred. Use uploaded data ONLY as factual anchors: name, contact, employer names, dates, education, certifications, and high-level campaign/domain names; keep timelines and employers truthful.
+
+BOLDING RULE (CRITICAL):
+- Bold JD-derived tools/channels/terms when mentioned, like **SEO**, **Google Ads**, **GA4**, **HubSpot**, **A/B testing**, **attribution**.
+- Apply in PROFESSIONAL SUMMARY and EXPERIENCE bullets. Do not bold generic words.
+
+PUNCTUATION + MARKDOWN HYGIENE (CRITICAL):
+- Do not use em dashes (—) or double-hyphen em dashes (--). Use commas or periods instead.
+- Do not use italic markdown (single-asterisk *...*). Only use markdown headings (#, ##), bullets (-), and bold (**...**).
+
+TIMELINE + STACK COHERENCE (CRITICAL):
+- Keep each role consistent with its date range and environment implied by anchors/JD.
+- Do not claim every tool/channel in every role; distribute realistically.
+
+===========================================
+OUTPUT FORMAT -- FOLLOW EXACTLY
+===========================================
+
+# [FULL NAME]
+[Title aligned to the JD] | Contract & Consulting
+[Location] - [Phone] - [Email] - [LinkedIn URL]
+
+## PROFESSIONAL SUMMARY
+- [12-14 bullets that mirror JD priorities: channels, lifecycle, analytics, campaign ops, experimentation, stakeholder comms, and measurable outcomes]
+
+## SKILLS
+**Channels:** [values]
+**Campaigns:** [values]
+**Analytics & Attribution:** [values]
+**Lifecycle/CRM:** [values]
+**Content & Messaging:** [values]
+**Tools:** [values]
+**Experimentation:** [values]
+**Methodologies:** [values]
+
+## PROFESSIONAL EXPERIENCE
+
+**[JD-aligned Title]** | **[Company]** | [Dates]
+[Campaign/Program/Portfolio -- brief descriptor]
+- [6-10 bullets, each proving a JD keyword or KPI]
+
+## EDUCATION & CERTIFICATIONS
+[Degree] -- [University], [Year]
+[Certifications]
+
+JD-FIRST RULES:
+- Skills rows and bullets must mirror JD keywords and requirements.
+- Include at least 3 concrete metrics (CTR/CVR, CAC/CPA, MQL->SQL, pipeline, revenue, retention, open/click rates) unless the JD clearly avoids metrics.
 
 Output clean markdown only -- no commentary, no preamble, no trailing notes.`;
 
@@ -145,6 +224,16 @@ BOLDING RULE (CRITICAL):
 - Whenever you mention a technology/tool/framework/platform that comes from the JD requirement extraction (or the inferred cloud provider ecosystem), wrap the term in markdown bold like **Java 8**, **Spring Boot**, **Oracle**, **Angular 8**, **Kafka**.
 - Apply this in the SUMMARY and all EXPERIENCE bullets.
 - Do not bold generic words (team, system, service). Only bold concrete technical terms.
+
+PUNCTUATION + MARKDOWN HYGIENE (CRITICAL):
+- Do not use em dashes (—) or double-hyphen em dashes (--). Use commas or periods instead.
+- Do not use italic markdown (single-asterisk *...*). Only use markdown headings (#, ##), bullets (-), and bold (**...**).
+
+TIMELINE + STACK COHERENCE (CRITICAL):
+- Keep each role internally consistent with its date range and environment implied by the anchors/JD.
+- Do not imply every technology was used in every role. Distribute skills realistically across roles.
+- If unsure about a tool/version in a given time period, omit the version and keep it generic.
+- Avoid “impossible combos” in one bullet; keep stacks plausible and interoperable.
 
 ===========================================
 OUTPUT FORMAT -- FOLLOW EXACTLY
@@ -169,7 +258,7 @@ OUTPUT FORMAT -- FOLLOW EXACTLY
 ## EXPERIENCE
 
 **[Job Title]** | **[Company]** | [Dates]
-*[Project/Platform Name -- brief descriptor]*
+[Project/Platform Name -- brief descriptor]
 - [bullet]
 - [bullet]
 - [bullet]
@@ -177,7 +266,7 @@ OUTPUT FORMAT -- FOLLOW EXACTLY
 (6-8 bullets for most recent role)
 
 **[Job Title]** | **[Company]** | [Dates]
-*[Project/Platform Name -- brief descriptor]*
+[Project/Platform Name -- brief descriptor]
 - [bullet]
 - [bullet]
 - [bullet]
@@ -185,7 +274,7 @@ OUTPUT FORMAT -- FOLLOW EXACTLY
 (6-8 bullets for second role)
 
 **[Job Title]** | **[Company]** | [Dates]
-*[Project/Platform Name -- brief descriptor]*
+[Project/Platform Name -- brief descriptor]
 - [bullet]
 - [bullet]
 - [bullet]
@@ -203,6 +292,7 @@ EXACTLY 3 sentences. Plain paragraph. No bullets, no hyphens, no lists. If you w
 - Sentence 2: Most differentiated tech combination + employer scale (name the company/domain), using JD language for stack where applicable.
 - Sentence 3: 2-3 hard, concrete metrics from their actual experience, separated by commas, ideally tied to JD themes (quality, performance, delivery).
 No soft claims. No "proven", "passionate", "strong communicator". Close on numbers. Make sure the summary itself visibly contains the core JD skills.
+Also ensure at least one sentence includes Cloud/production delivery language. If the JD doesn't name a cloud provider, keep it provider-neutral.
 
 ===========================================
 SKILLS SECTION RULES
@@ -247,6 +337,47 @@ JD-FIRST RULES
 
 Output clean markdown only -- no commentary, no preamble, no trailing notes.`;
 
+const FULLTIME_MARKETING_SYSTEM = `You are a senior recruiter and resume writer specialising in full-time marketing roles. Write like a real human: direct, specific, natural. No templated tone.
+
+Primary rule: This resume is written FOR the job description. Skills, summary, and bullets are composed fresh from the JD. Assume hands-on familiarity with JD requirements. Uploaded data supplies only factual anchors (identity, employers, dates, education).
+
+BOLDING RULE (CRITICAL):
+- Bold JD-derived tools/channels/terms when mentioned, like **SEO**, **paid social**, **GA4**, **HubSpot**, **attribution**, **A/B testing**.
+
+PUNCTUATION + MARKDOWN HYGIENE (CRITICAL):
+- Do not use em dashes (—) or double-hyphen em dashes (--). Use commas or periods instead.
+- Do not use italic markdown (single-asterisk *...*). Only use markdown headings (#, ##), bullets (-), and bold (**...**).
+
+===========================================
+OUTPUT FORMAT -- FOLLOW EXACTLY
+===========================================
+
+# [FULL NAME]
+[Title aligned to the JD]
+[Location] - [Phone] - [Email] - [LinkedIn URL]
+
+## SUMMARY
+[Single paragraph. Exactly 3 sentences. No bullets. Each sentence must include key JD terms and 1 metric.]
+
+## SKILLS
+**Channels:** [values]
+**Analytics & Attribution:** [values]
+**Lifecycle/CRM:** [values]
+**Content & Messaging:** [values]
+**Tools:** [values]
+**Experimentation:** [values]
+
+## EXPERIENCE
+**[JD-aligned Title]** | **[Company]** | [Dates]
+[Program/Campaign Portfolio -- brief descriptor]
+- [6-8 bullets, quantified, mapped to JD requirements]
+
+## EDUCATION & CERTIFICATIONS
+[Degree] -- [University], [Year]
+[Certifications]
+
+Output clean markdown only -- no commentary, no preamble, no trailing notes.`;
+
 const COVER_LETTER_SYSTEM = `You are an expert cover letter writer for contract and full-time roles. Write like a real person: plain English, short sentences, and a natural rhythm. The letter must feel human, not polished by a PR team.
 
 STRUCTURE:
@@ -270,6 +401,10 @@ CONSISTENCY CHECKS (CRITICAL):
 - If the role is "full stack" and the JD mentions a frontend framework, include one sentence showing frontend work (not just backend).
 - Keep it tight: avoid long lists. Mention 4-7 key skills total across the whole letter.
 
+CLOUD SENTENCE (ENGINEERING ONLY):
+- If the role archetype is engineering/tech, include exactly ONE short sentence about cloud/deployment/monitoring in production.
+- Keep it provider-neutral unless the JD (or cloud provider inference) names AWS/Azure/GCP. Do not list many services in the cover letter.
+
 IMPACT + DIFFERENTIATORS (CRITICAL):
 - Include at least one concrete number (latency, cycle time, coverage, throughput, defect reduction, etc.) IF a defensible number exists in the provided fact anchors or JD text. If none are available, do not invent numbers.
 - If the JD includes rare good-to-have items (e.g., GIS, Tableau, Kafka/JMS, integration testing), pick 1 and weave it in as a differentiator — but only if it appears in the JD requirement extraction.
@@ -286,6 +421,13 @@ VOICE + VOCABULARY RULES (CRITICAL):
 - Contractions are fine (I'm, I've, don't).
 - Avoid casual closers like "Happy to walk through". Prefer: "I'm available for a technical conversation at your convenience."
 
+PUNCTUATION + FORMATTING (CRITICAL):
+- Do not use em dashes (—) or double-hyphen em dashes (--). Use commas or periods instead.
+- Signature must be 2-3 lines exactly (no single-line signature):
+  Line 1: Full Name
+  Line 2: Phone | Email
+  Line 3: LinkedIn URL (optional)
+
 TONE: Confident but not arrogant. Human. First person. Contractions fine. No exclamation marks. No corporate jargon.
 LENGTH: 3-4 short paragraphs. Under 300 words.
 Format: plain paragraphs only -- no headers, no bullets. Start with "Dear Hiring Manager," or personalise if company is named.`;
@@ -293,22 +435,28 @@ Format: plain paragraphs only -- no headers, no bullets. Start with "Dear Hiring
 // --- DOCX BUILDER ----------------------------------------------------------
 
 async function buildDocx(markdownText, resumeType, parsedName) {
-  // Load docx library from CDN (UMD build)
-  if (!window.docx) {
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://unpkg.com/docx@8.5.0/build/index.js";
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
+  // #region agent log
+  fetch('http://127.0.0.1:7646/ingest/df30c951-96be-4e0e-9fcb-abf4c7666864',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5c105d'},body:JSON.stringify({sessionId:'5c105d',runId:'pre-fix',hypothesisId:'H1',location:'resume_builder_app.jsx:buildDocx',message:'buildDocx entry',data:{hasWindowDocx:!!window.docx, textLen:(markdownText||'').length, resumeType:resumeType||null, hasParsedName:!!parsedName},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
 
+  // Load docx from local bundle (no CDN)
+  let docx;
+  try {
+    docx = await import("docx");
+    // #region agent log
+    fetch('http://127.0.0.1:7646/ingest/df30c951-96be-4e0e-9fcb-abf4c7666864',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5c105d'},body:JSON.stringify({sessionId:'5c105d',runId:'pre-fix',hypothesisId:'H2',location:'resume_builder_app.jsx:buildDocx',message:'docx import succeeded',data:{keys:Object.keys(docx||{}).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
+  } catch (e) {
+    // #region agent log
+    fetch('http://127.0.0.1:7646/ingest/df30c951-96be-4e0e-9fcb-abf4c7666864',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5c105d'},body:JSON.stringify({sessionId:'5c105d',runId:'pre-fix',hypothesisId:'H2',location:'resume_builder_app.jsx:buildDocx',message:'docx import failed',data:{error:String(e?.message||e)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
+    throw e;
+  }
   const {
     Document, Packer, Paragraph, TextRun, AlignmentType,
     LevelFormat, BorderStyle, TabStopType, TabStopPosition,
     UnderlineType, HeadingLevel, ShadingType, WidthType
-  } = window.docx;
+  } = docx;
 
   const NAVY_HEX = "1F3864";
   const ACCENT_HEX = "2B5EA7";
@@ -319,18 +467,26 @@ async function buildDocx(markdownText, resumeType, parsedName) {
   const children = [];
   const bulletRef = `bullets_${Date.now()}`;
 
-  // Parse inline markdown: **bold**, *italic*, [link](url)
+  // Parse inline markdown: **bold**
   function parseInline(text) {
     const runs = [];
-    const re = /(\*\*([^*]+)\*\*|\*([^*]+)\*)/g;
+    // Allow extra spaces inside markers like ** Java 8 **
+    const re = /\*\*\s*([^*]+?)\s*\*\*/g;
     let last = 0, m;
     while ((m = re.exec(text)) !== null) {
-      if (m.index > last) runs.push(new TextRun({ text: text.slice(last, m.index), font: "Calibri", size: 20, color: DARK_HEX }));
-      if (m[2]) runs.push(new TextRun({ text: m[2], bold: true, font: "Calibri", size: 20, color: DARK_HEX }));
-      else if (m[3]) runs.push(new TextRun({ text: m[3], italics: true, font: "Calibri", size: 20, color: MID_HEX }));
+      if (m.index > last) {
+        // Strip any stray markers so they never leak into DOCX
+        const plain = text.slice(last, m.index).replace(/\*\*/g, "").replace(/\*/g, "");
+        if (plain) runs.push(new TextRun({ text: plain, font: "Calibri", size: 20, color: DARK_HEX }));
+      }
+      const boldText = String(m[1] || "").replace(/\*\*/g, "").replace(/\*/g, "");
+      if (boldText) runs.push(new TextRun({ text: boldText, bold: true, font: "Calibri", size: 20, color: DARK_HEX }));
       last = m.index + m[0].length;
     }
-    if (last < text.length) runs.push(new TextRun({ text: text.slice(last), font: "Calibri", size: 20, color: DARK_HEX }));
+    if (last < text.length) {
+      const plain = text.slice(last).replace(/\*\*/g, "").replace(/\*/g, "");
+      if (plain) runs.push(new TextRun({ text: plain, font: "Calibri", size: 20, color: DARK_HEX }));
+    }
     return runs;
   }
 
@@ -420,7 +576,7 @@ async function buildDocx(markdownText, resumeType, parsedName) {
       children.push(new Paragraph({
         children: [
           new TextRun({ text: label + ": ", bold: true, font: "Calibri", size: 20, color: NAVY_HEX }),
-          new TextRun({ text: rest, font: "Calibri", size: 20, color: DARK_HEX })
+          ...parseInline(rest)
         ],
         spacing: { after: 40 }
       }));
@@ -558,7 +714,10 @@ function RenderDoc({ text }) {
           );
         }
         if (line.match(/^\*\*[^*]+:\*\*/)) {
-          return <p key={i} style={{ fontSize: 12, margin: "3px 0", lineHeight: 1.55, fontFamily: "system-ui,sans-serif" }} dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?):\*\*/g, `<strong style="color:${NAVY};font-family:system-ui,sans-serif">$1:</strong>`) }} />;
+          const html = line
+            .replace(/\*\*(.*?):\*\*/g, `<strong style="color:${NAVY};font-family:system-ui,sans-serif">$1:</strong>`)
+            .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+          return <p key={i} style={{ fontSize: 12, margin: "3px 0", lineHeight: 1.55, fontFamily: "system-ui,sans-serif" }} dangerouslySetInnerHTML={{ __html: html }} />;
         }
         return <p key={i} style={{ fontSize: 12, color: "#223344", margin: "3px 0", lineHeight: 1.6, fontFamily: "system-ui,sans-serif" }} dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") }} />;
       })}
@@ -567,13 +726,146 @@ function RenderDoc({ text }) {
 }
 
 function CoverLetterView({ text }) {
+  const escapeHtml = (s) =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
   return (
     <div style={{ fontFamily: "Georgia,serif", lineHeight: 1.8 }}>
       {text.split("\n\n").map((para, i) => (
-        para.trim() ? <p key={i} style={{ fontSize: 13, color: "#1a2830", margin: "0 0 16px" }}>{para.trim()}</p> : null
+        para.trim()
+          ? (
+            <p
+              key={i}
+              style={{ fontSize: 13, color: "#1a2830", margin: "0 0 16px" }}
+              dangerouslySetInnerHTML={{
+                __html: escapeHtml(para.trim()).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+              }}
+            />
+          )
+          : null
       ))}
     </div>
   );
+}
+
+async function exportElementToPdf(el, filename) {
+  if (!el) throw new Error("No content to export");
+
+  // We render PDF page-by-page to avoid canvas height limits that can
+  // truncate long resumes (common "half the text missing" symptom).
+
+  const loadScriptOnce = (src) =>
+    new Promise((resolve, reject) => {
+      const existing = [...document.scripts].find((s) => s?.src === src);
+      if (existing) return resolve();
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+  // Load explicit globals (bundle doesn't always expose them reliably)
+  if (!window.html2canvas) {
+    await loadScriptOnce("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+  }
+  if (!window.jspdf?.jsPDF) {
+    await loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js");
+  }
+
+  const jsPDF = window.jspdf?.jsPDF;
+  const html2canvas = window.html2canvas;
+  if (!jsPDF) throw new Error("jsPDF failed to load");
+  if (!html2canvas) throw new Error("html2canvas failed to load");
+
+  // Clone into an offscreen container to stabilize width/layout and avoid
+  // scroll/transform artifacts.
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-100000px";
+  wrapper.style.top = "0";
+  wrapper.style.width = `${Math.max(816, el.scrollWidth || el.clientWidth || 816)}px`;
+  wrapper.style.background = "#ffffff";
+  wrapper.style.padding = "0";
+  wrapper.style.margin = "0";
+
+  const clone = el.cloneNode(true);
+  // Remove UI chrome (borders/shadows) so PDF starts flush and clean
+  clone.style.border = "none";
+  clone.style.boxShadow = "none";
+  clone.style.borderRadius = "0";
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+
+  try {
+    // Wait a frame so fonts/layout settle
+    await new Promise((r) => requestAnimationFrame(() => r()));
+
+    const pdf = new jsPDF({ unit: "mm", format: "letter", orientation: "portrait" });
+    const marginMm = 10;
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const printableW = pageW - marginMm * 2;
+    const printableH = pageH - marginMm * 2;
+
+    // px per mm based on rendered width vs printable width
+    const canvasWidthPx = clone.scrollWidth || clone.clientWidth || 816;
+    const pxPerMm = canvasWidthPx / printableW;
+    // Round slice height so it lands on whole device pixels at scale=2 (reduces "half a line" crops)
+    const sliceHeightPx = Math.floor((printableH * pxPerMm) / 2) * 2;
+
+    const totalHeightPx = clone.scrollHeight || clone.clientHeight || 0;
+    const scale = 2;
+
+    let y = 0;
+    let page = 0;
+    while (y < totalHeightPx - 2) {
+      const h = Math.min(sliceHeightPx, totalHeightPx - y);
+
+      // Viewport-style capture: clip to a fixed window and translate content up.
+      // This avoids html2canvas "y offset" captures that often bisect text lines.
+      wrapper.style.height = `${h}px`;
+      wrapper.style.overflow = "hidden";
+      clone.style.margin = "0";
+      clone.style.padding = "0";
+      clone.style.transform = `translateY(${-Math.round(y)}px)`;
+      clone.style.transformOrigin = "top left";
+
+      await new Promise((r) => requestAnimationFrame(() => r()));
+
+      const canvas = await html2canvas(wrapper, {
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        scale,
+        width: canvasWidthPx,
+        height: h,
+        windowWidth: canvasWidthPx,
+        windowHeight: h,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.98);
+      const imgWmm = printableW;
+      const imgHmm = (canvas.height / (canvas.width / imgWmm));
+
+      if (page > 0) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", marginMm, marginMm, imgWmm, imgHmm, undefined, "FAST");
+
+      y += h;
+      page += 1;
+    }
+
+    pdf.save(filename);
+  } finally {
+    document.body.removeChild(wrapper);
+  }
 }
 
 function extractJdRequirements(jdText) {
@@ -613,6 +905,13 @@ function inferCloudProvider(jdText) {
   return "Unspecified";
 }
 
+function cloudServiceExamples(provider) {
+  if (provider === "AWS") return "S3, EC2, EKS, RDS, IAM, CloudWatch";
+  if (provider === "Azure") return "Blob Storage, App Service, AKS, Azure Functions, Azure SQL, Azure Monitor";
+  if (provider === "GCP") return "Cloud Storage, Compute Engine, GKE, Cloud Run, BigQuery, Cloud Monitoring";
+  return "";
+}
+
 function CopyBtn({ text, label }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -634,11 +933,17 @@ function DocxBtn({ text, resumeType, parsedName }) {
   const handleExport = async () => {
     setExporting(true);
     setError("");
+    // #region agent log
+    fetch('http://127.0.0.1:7646/ingest/df30c951-96be-4e0e-9fcb-abf4c7666864',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5c105d'},body:JSON.stringify({sessionId:'5c105d',runId:'pre-fix',hypothesisId:'H3',location:'resume_builder_app.jsx:DocxBtn',message:'docx export start',data:{textLen:(text||'').length,resumeType:resumeType||null,hasParsedName:!!parsedName},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion agent log
     try {
       await buildDocx(text, resumeType, parsedName);
     } catch (e) {
       console.error(e);
-      setError("Export failed -- try Copy instead.");
+      // #region agent log
+      fetch('http://127.0.0.1:7646/ingest/df30c951-96be-4e0e-9fcb-abf4c7666864',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5c105d'},body:JSON.stringify({sessionId:'5c105d',runId:'pre-fix',hypothesisId:'H3',location:'resume_builder_app.jsx:DocxBtn',message:'docx export failed',data:{error:String(e?.message||e)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion agent log
+      setError(e?.message ? `Export failed: ${e.message}` : "Export failed -- try Copy instead.");
     }
     setExporting(false);
   };
@@ -657,10 +962,36 @@ function DocxBtn({ text, resumeType, parsedName }) {
   );
 }
 
+function PdfBtn({ elementRef, filename, small, variant = "secondary" }) {
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+
+  const onExport = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      await exportElementToPdf(elementRef?.current, filename);
+    } catch (e) {
+      console.error(e);
+      setError(e?.message ? `PDF export failed: ${e.message}` : "PDF export failed — try Copy instead.");
+    }
+    setExporting(false);
+  };
+
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+      <Btn onClick={onExport} disabled={exporting} small={small} variant={variant}>
+        {exporting ? "Generating..." : "Download PDF"}
+      </Btn>
+      {error && <span style={{ fontSize: 11, color: "#a32d2d" }}>{error}</span>}
+    </div>
+  );
+}
+
 // --- BASELINE EXAMPLES (injected into the generation prompt for structure enforcement) -----
 
 const CONTRACT_EXAMPLE_SNIPPET = `
-EXAMPLE OF CORRECT CONTRACT PROFILE FORMAT (14 bullets, this topic order):
+EXAMPLE OF CORRECT PROFESSIONAL SUMMARY FORMAT (14 bullets, this topic order):
 - [Years of experience + domain breadth]
 - [Core stack aligned to proven experience and JD terms]
 - [Most credible high-impact platform or project statement]
@@ -741,6 +1072,7 @@ export default function App() {
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState("");
   const [resumeType, setResumeType] = useState(null);
+  const [archetypeOverride, setArchetypeOverride] = useState("auto"); // auto | engineering | marketing
   const [jd, setJd] = useState("");
   const [generating, setGenerating] = useState(false);
   const [resume, setResume] = useState("");
@@ -748,6 +1080,7 @@ export default function App() {
   const [genError, setGenError] = useState("");
   const [activeTab, setActiveTab] = useState("resume");
   const fileRef = useRef();
+  const docRef = useRef();
 
   const handleFile = async (f) => {
     if (!f) return;
@@ -916,14 +1249,24 @@ export default function App() {
     setResume("");
     setCoverLetter("");
 
-    const systemPrompt = resumeType === "contract" ? CONTRACT_RESUME_SYSTEM : FULLTIME_RESUME_SYSTEM;
+    const inferred = inferArchetype(jd);
+    const archetype = archetypeOverride === "auto" ? inferred : archetypeOverride;
+    const systemPrompt =
+      archetype === "marketing"
+        ? (resumeType === "contract" ? CONTRACT_MARKETING_SYSTEM : FULLTIME_MARKETING_SYSTEM)
+        : (resumeType === "contract" ? CONTRACT_RESUME_SYSTEM : FULLTIME_RESUME_SYSTEM);
     const exampleSnippet = resumeType === "contract" ? CONTRACT_EXAMPLE_SNIPPET : FULLTIME_EXAMPLE_SNIPPET;
     const typeLabel = resumeType === "contract" ? "contract" : "full-time";
     const jdReq = extractJdRequirements(jd);
-    const cloudProvider = inferCloudProvider(jd);
+    const inferredCloud = inferCloudProvider(jd);
+    const cloudProvider = inferredCloud === "Unspecified" ? "AWS" : inferredCloud;
+    const cloudExamples = cloudServiceExamples(cloudProvider);
     const modeInstruction = "ALIGNMENT MODE: OPTIMIZED. Maximize JD keyword alignment and role-title normalization while preserving coherent project context.";
 
-    const combinedPrompt = `FACT ANCHORS ONLY (from uploaded resume — use for identity, employer names, employment dates, degrees, certifications, and domain/project names ONLY):
+    const combinedPrompt = `ROLE ARCHETYPE:
+${archetype}
+
+FACT ANCHORS ONLY (from uploaded resume — use for identity, employer names, employment dates, degrees, certifications, and domain/project names ONLY):
 ${JSON.stringify(parsedData, null, 2)}
 
 Do NOT copy this JSON's skills text or roles[].bullets into the output. Do NOT treat those fields as resume-ready content. Compose all technical skills rows and every professional bullet from scratch using the JD below while staying consistent with employers and timelines above.
@@ -936,6 +1279,7 @@ ${JSON.stringify(jdReq, null, 2)}
 
 CLOUD PROVIDER INFERENCE:
 ${cloudProvider}
+${cloudExamples ? `CLOUD SERVICE EXAMPLES: ${cloudExamples}` : ""}
 
 ${exampleSnippet}
 
@@ -947,10 +1291,18 @@ TASK: Produce TWO outputs: (1) the tailored ${typeLabel} resume and (2) a tailor
 [the cover letter text]
 
 For the cover letter: assume the strongest, most relevant JD skills appear in the most recent role(s) and write confidently. Keep vocabulary simple, avoid buzzwords, and keep sentences short. Under 300 words. No AI openers. Do not mention onsite interview/travel/relocation/commute unless the JD explicitly requests it. Only name technologies that appear in the JD requirement extraction above; avoid unrelated tools. If the role is full stack and the JD mentions frontend, include one sentence that clearly signals frontend work.
+If ROLE ARCHETYPE is engineering, include exactly one short cloud/deployment/monitoring sentence (provider-neutral unless the inferred provider is AWS/Azure/GCP).
 End the cover letter with a signature block using the candidate contact from FACT ANCHORS:
 Full Name
 Phone | Email
 LinkedIn (if available)
+
+INTERNAL COHERENCE VALIDATOR (DO THIS BEFORE YOU OUTPUT ANYTHING):
+1) Timeline sanity: check each role's date range and ensure the tech stack you mention is plausible for that period; if unsure, remove version numbers.
+2) Stack compatibility: ensure the technologies you place together in bullets make sense as a working system (no random tool soup).
+3) Role realism: don't claim every technology appears in every role; distribute the stack across roles realistically.
+4) JD alignment: ensure must-have items appear multiple times in context, but without breaking (1)-(3).
+If any check fails, silently rewrite until all checks pass, then output the final RESUME and COVER_LETTER sections only.
 
 CRITICAL REQUIREMENTS:
 1. Follow the output format in the system prompt EXACTLY -- section headings, structure, order
@@ -961,8 +1313,9 @@ CRITICAL REQUIREMENTS:
 6. ${modeInstruction}
 7. Internally ensure every must-have JD item is visible in skills or bullets; good-to-have items where space allows
 8. Do not paste or lightly rephrase uploaded resume bullets or skills lists
-9. If the JD lists very few skills, enrich with related standard skills for that role type (especially cloud, containers, CI/CD, observability) and reflect them in profile + experience bullets per system prompt
+9. If the JD lists very few skills, enrich with related standard skills for that role type. For engineering roles, include cloud/containers/CI/CD/observability; include specific cloud service names using CLOUD SERVICE EXAMPLES when a provider is set.
 10. Bold technical terms (markdown **...**) when they come from JD requirements or inferred cloud provider services, especially in summary/profile and experience bullets.
+11. If the JD does not mention cloud but the role implies modern production delivery, include Cloud in skills plus at least one bullet in the most recent role that proves Cloud/monitoring/deployment. If a provider is set, include 3-6 concrete service names in the Cloud row and in one bullet.
 
 Output both sections now.`;
 
@@ -1003,6 +1356,7 @@ Output both sections now.`;
 
   const reset = () => {
     setStep(0); setFileName(""); setParsedData(null); setResumeType(null);
+    setArchetypeOverride("auto");
     setJd(""); setResume(""); setCoverLetter(""); setGenError(""); setParseError("");
   };
 
@@ -1084,6 +1438,15 @@ Output both sections now.`;
         <div>
           <h2 style={{ fontSize: 14, fontWeight: 700, color: NAVY, marginBottom: 4 }}>What type of resume do you need?</h2>
           <p style={{ fontSize: 12.5, color: "#6b7a8d", marginBottom: 20 }}>Each type is structured differently. Choose based on the role you're applying for.</p>
+
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ fontSize: 12, color: "#6b7a8d", margin: "0 0 8px" }}>Role type</p>
+            <select value={archetypeOverride} onChange={e => setArchetypeOverride(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #d0daea", fontSize: 12.5, color: "#223344", background: "#fff" }}>
+              <option value="auto">Auto-detect from JD</option>
+              <option value="engineering">Engineering / Tech</option>
+              <option value="marketing">Marketing</option>
+            </select>
+          </div>
 
           <div style={{ display: "flex", gap: 14, marginBottom: 24 }}>
             <TabBtn active={resumeType === "contract"} onClick={() => setResumeType("contract")} icon="">Contract Resume</TabBtn>
@@ -1172,14 +1535,30 @@ Output both sections now.`;
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               {activeTab === "resume" && (
-                <DocxBtn text={resume} resumeType={resumeType} parsedName={parsedData?.name} />
+                <>
+                  <DocxBtn text={resume} resumeType={resumeType} parsedName={parsedData?.name} />
+                  <PdfBtn
+                    elementRef={docRef}
+                    filename={`${(parsedData?.name || "Resume").replace(/\\s+/g, "_")}_${resumeType === "contract" ? "Contract" : "FullTime"}.pdf`}
+                    small
+                    variant="secondary"
+                  />
+                </>
+              )}
+              {activeTab === "cover" && (
+                <PdfBtn
+                  elementRef={docRef}
+                  filename={`${(parsedData?.name || "CoverLetter").replace(/\\s+/g, "_")}_CoverLetter.pdf`}
+                  small
+                  variant="secondary"
+                />
               )}
               <CopyBtn text={activeTab === "resume" ? resume : coverLetter} label={activeTab === "resume" ? "Copy resume" : "Copy cover letter"} />
             </div>
           </div>
 
           {/* Document display */}
-          <div style={{ border: "1.5px solid #d0dbe8", borderRadius: 12, padding: "28px 32px", background: "#fff", boxShadow: "0 2px 16px rgba(26,46,74,0.07)" }}>
+          <div ref={docRef} style={{ border: "1.5px solid #d0dbe8", borderRadius: 12, padding: "28px 32px", background: "#fff", boxShadow: "0 2px 16px rgba(26,46,74,0.07)" }}>
             {activeTab === "resume" ? <RenderDoc text={resume} /> : <CoverLetterView text={coverLetter} />}
           </div>
 

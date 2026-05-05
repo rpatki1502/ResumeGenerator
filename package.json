@@ -10,14 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "docx": "^9.6.1",
     "dotenv": "latest",
     "express": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
-    "kill-port": "latest",
     "concurrently": "latest",
+    "kill-port": "latest",
     "vite": "latest"
   }
 }
