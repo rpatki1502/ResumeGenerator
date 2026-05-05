@@ -1,0 +1,23 @@
+{
+  "name": "resume-builder-local",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "kill-port 5173 5174 5175 5176 5177 5178 5179 5180 8787",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dotenv": "latest",
+    "express": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "kill-port": "latest",
+    "concurrently": "latest",
+    "vite": "latest"
+  }
+}
